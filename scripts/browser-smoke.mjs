@@ -7,7 +7,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const profile = await fs.mkdtemp(path.join(os.tmpdir(), "pmp-browser-"));
 const children = [],
-  errors = [];
+  errors = [],
+  requests = [];
 let socket,
   counter = 0;
 const pending = new Map();
@@ -113,13 +114,18 @@ try {
         ? item?.reject(Error(JSON.stringify(message.error)))
         : item?.resolve(message.result);
     }
+    if (message.method === "Network.requestWillBeSent")
+      requests.push({
+        sessionId: message.sessionId,
+        url: message.params.request.url,
+      });
     if (message.method === "Runtime.exceptionThrown")
       errors.push(
         message.params.exceptionDetails.exception?.description ||
           message.params.exceptionDetails.text,
       );
   });
-  async function page(user, width = 1440) {
+  async function page(user, width = 1440, legacy = !!user) {
     const context = await send("Target.createBrowserContext"),
       target = await send("Target.createTarget", {
         url: "about:blank",
@@ -133,7 +139,7 @@ try {
       await send(method, {}, sessionId);
     await send(
       "Network.setCookie",
-      { name: "qa_user", value: user, url: origin + "/" },
+      { name: "qa_user", value: user || "anonymous", url: origin + "/" },
       sessionId,
     );
     await send(
@@ -172,18 +178,94 @@ try {
       );
     const state = () =>
       evaluate(
-        `new Promise((resolve,reject)=>{const r=indexedDB.open('pmp-room',1);r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,tx=db.transaction('states','readonly'),q=tx.objectStore('states').get(${JSON.stringify("pmp-room-v2:" + user)});q.onsuccess=()=>{resolve(q.result);db.close();};q.onerror=()=>reject(q.error);};})`,
+        `new Promise((resolve,reject)=>{const r=indexedDB.open('pmp-room',1);r.onerror=()=>reject(r.error);r.onsuccess=()=>{const db=r.result,tx=db.transaction('states','readonly'),q=tx.objectStore('states').get(${JSON.stringify("pmp-room-v2:" + (legacy ? user : "offline"))});q.onsuccess=()=>{resolve(q.result);db.close();};q.onerror=()=>reject(q.error);};})`,
       );
     const navigate = async (url) => {
+      if (legacy && url.startsWith(origin + "/")) {
+        const target = new URL(url);
+        target.searchParams.set("legacy", "1");
+        url = target.href;
+      }
       await send("Page.navigate", { url }, sessionId);
       await wait("document.querySelector('.hero')!==null");
     };
     await navigate(origin + "/");
     await wait(
-      "document.querySelector('#sync-status').textContent.includes('已同步')",
+      legacy
+        ? "document.querySelector('#sync-status').textContent.includes('已同步')"
+        : "document.querySelector('#sync-status').textContent.includes('免登录')",
     );
     return { sessionId, evaluate, wait, click, state, navigate };
   }
+  const guest = await page(null, 390, false);
+  await guest.click('[data-paper="1"]');
+  await guest.wait("document.querySelector('[name=answer]')!==null");
+  let guestState = await guest.state();
+  const guestSession = Object.values(guestState.sessions)[0],
+    guestQuestion = guestState.snapshots[guestSession.questionKeys[0]];
+  await guest.click(`[name=answer][value="${guestQuestion.answer[0]}"]`);
+  await guest.click('[data-action="check"]');
+  await guest.wait("document.querySelector('.rationale')!==null");
+  await guest.navigate(origin + "/");
+  guestState = await guest.state();
+  assert.equal(Object.keys(guestState.events).length, 1);
+  assert.equal(
+    requests.filter(
+      (r) =>
+        r.sessionId === guest.sessionId &&
+        new URL(r.url).pathname.startsWith("/api/"),
+    ).length,
+    0,
+  );
+  await guest.evaluate(
+    `(async()=>{const {BrowserStore}=await import('/storage.js');const {emptyState}=await import('/learning.js');const store=new BrowserStore();await store.open();const old=emptyState();old.notes['PMP-001']={text:'old local note',at:1};await store.save('pmp-room-v2:previous-user',old);})()`,
+  );
+  await guest.click('[data-page="sync"]');
+  await guest.click('[data-action="find-local-profiles"]');
+  await guest.wait("document.querySelector('[data-local-profile]')!==null");
+  await guest.click("[data-local-profile]");
+  await guest.click("#dialog-ok");
+  await guest.wait("document.body.innerText.includes('旧记录已合并')");
+  guestState = await guest.state();
+  assert.equal(guestState.notes["PMP-001"].text, "old local note");
+  assert.equal(Object.keys(guestState.events).length, 1);
+  assert.equal(
+    await guest.evaluate(
+      `(async()=>{const {BrowserStore}=await import('/storage.js');const store=new BrowserStore();await store.open();return (await store.read('pmp-room-v2:previous-user')).notes['PMP-001'].text;})()`,
+    ),
+    "old local note",
+  );
+  assert.equal(
+    requests.filter(
+      (r) =>
+        r.sessionId === guest.sessionId &&
+        new URL(r.url).pathname.startsWith("/api/"),
+    ).length,
+    0,
+  );
+  const privateAccess = await guest.evaluate(
+    "(async()=>({me:(await fetch('/api/me')).status,state:(await fetch('/api/state')).status}))()",
+  );
+  assert.deepEqual(privateAccess, { me: 401, state: 401 });
+  assert.equal(
+    await guest.evaluate("document.documentElement.scrollWidth<=innerWidth"),
+    true,
+  );
+  console.log(
+    "PASS anonymous study and refresh without identity requests, local record recovery, private API protection",
+  );
+  const signedGuest = await page("qa-one", 390, false);
+  assert.equal(
+    requests.filter(
+      (r) =>
+        r.sessionId === signedGuest.sessionId &&
+        new URL(r.url).pathname.startsWith("/api/"),
+    ).length,
+    0,
+  );
+  console.log(
+    "PASS normal entry stays login-free even when a legacy account cookie exists",
+  );
   const desktop = await page("qa-one");
   assert.equal(
     await desktop.evaluate("document.documentElement.scrollWidth<=innerWidth"),
@@ -308,6 +390,28 @@ try {
   assert.equal(migration.marker, "legacy");
   assert.equal(migration.legacy, null);
   console.log("PASS 6MB local history and legacy localStorage migration");
+  await other.click('[data-page="home"]');
+  await other.click('[data-paper="1"]');
+  await other.wait("document.querySelector('[data-action=favorite]')!==null");
+  await other.click('[data-action="favorite"]');
+  await other.click('[data-page="sync"]');
+  await other.click('[data-action="sync-now"]');
+  await other.wait(
+    "document.querySelector('#sync-status').textContent.includes('已同步')",
+  );
+  await other.click('[data-action="copy-to-guest"]');
+  await other.click("#dialog-ok");
+  await other.wait(
+    "document.querySelector('.hero')!==null&&document.querySelector('#sync-status').textContent.includes('免登录')",
+  );
+  const copied = await other.evaluate(
+    `(async()=>{const {BrowserStore}=await import('/storage.js');const store=new BrowserStore();await store.open();return {guest:(await store.read('pmp-room-v2:offline')).favorites['PMP-001'].value,original:(await store.read('pmp-room-v2:qa-other')).favorites['PMP-001'].value,legacy:new URL(location.href).searchParams.has('legacy')};})()`,
+  );
+  assert.deepEqual(copied, { guest: true, original: true, legacy: false });
+  console.log(
+    "PASS optional old-account recovery copies records to login-free mode without deleting originals",
+  );
+
   await mobile.navigate(
     pathToFileURL(path.join(root, "artifacts/PMP-上海广东-学习平台.html")).href,
   );

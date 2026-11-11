@@ -43,9 +43,13 @@ const server = http.createServer(async (req, res) => {
         qa =
           (req.headers.cookie || "").match(
             /(?:^|;\s*)qa_user=([a-z0-9-]+)/,
-          )?.[1] || "qa-a";
-      headers.set("oai-authenticated-user-id", qa);
-      headers.set("oai-authenticated-user-email", qa + "@example.test");
+          )?.[1] || null;
+      headers.delete("oai-authenticated-user-id");
+      headers.delete("oai-authenticated-user-email");
+      if (qa && qa !== "anonymous") {
+        headers.set("oai-authenticated-user-id", qa);
+        headers.set("oai-authenticated-user-email", qa + "@example.test");
+      }
       const body = ["GET", "HEAD"].includes(req.method)
         ? undefined
         : await new Response(

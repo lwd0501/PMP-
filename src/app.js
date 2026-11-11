@@ -40,7 +40,7 @@ const app = document.querySelector("#app"),
     history: "学习记录",
     library: "题库与资料",
     catalog: "题库检索",
-    sync: "账号与同步",
+    sync: "保存与备份",
     quiz: "正在答题",
     result: "本次复盘",
     import: "导入预览",
@@ -61,6 +61,17 @@ let state = emptyState(),
   pendingImport = null,
   catalogPage = 0;
 const localStore = new BrowserStore();
+const legacyAccountMode =
+  location.protocol !== "file:" &&
+  new URL(location.href).searchParams.get("legacy") === "1";
+const guestKey = "pmp-room-v2:offline";
+let legacyProfileKeys = [];
+async function findLocalProfiles() {
+  legacyProfileKeys = (await localStore.keys()).filter(
+    (key) => key !== guestKey && key !== storageKey,
+  );
+}
+
 const legacyKey = "pmp-room-v1",
   activeKey = () => storageKey + ":active";
 const active = () => state.sessions[activeId] || null;
@@ -486,7 +497,7 @@ function historyView() {
   return (
     head(
       "保留每一次学习的来路。",
-      "记录可按账号同步；过去的答卷使用当时的题目快照，不因后来修订追溯改分。",
+      "记录保存在此浏览器；可用学习备份转移设备，过去的答卷保留当时的题目快照。",
     ) +
     `<section class="panel">${rows.map((r) => `<div class="history-row"><div><strong>${esc(r.label)} · ${r.answered}/${r.total}题</strong><small>${date(r.at)} · 答错${r.wrong} · 未答${r.unanswered} · ${clock(r.seconds)}</small></div><div class="actions" style="margin:0"><span class="history-percent">${r.percent === null ? "—" : r.percent + "%"}</span><button class="secondary" data-history="${r.id}">复盘</button></div></div>`).join("") || '<div class="empty"><h2>记录从下一次练习开始</h2><p>完成或结束练习后会生成记录。</p></div>'}</section>`
   );
@@ -533,20 +544,30 @@ function libraryView() {
     `<section class="panel"><h2>当前题库 · ${bank.length}题</h2><div class="result-grid"><div class="result-mini">有任务定位<strong>${mapped}/${bank.length}</strong></div><div class="result-mini">已做AI逻辑复查<strong>${reviewed}/${bank.length}</strong></div><div class="result-mini">独立专家签审<strong>尚未完成</strong></div></div><p class="tip">内置240题：原有180道原创练习（含30个案例），新增60道MIT开源题中文译编。每道译题可核对原文、答案、作者难度及译编说明。没有将它们标为历年正式真题。</p><div class="note">大纲链接用于知识点定位，不是PMI对本题答案的背书。基础 / 进阶为预估难度；训练正确率不等于正式考试通过率。</div><div class="actions"><button class="primary" data-page="catalog">检索题库</button><button class="secondary" data-action="export-bank">导出JSON题库</button>${state.custom?.value ? '<button class="secondary" data-action="reset-bank">恢复内置240题</button>' : ""}</div></section>
     ${fidelityPanel}${sourcesPanel}
     <div class="section-title"><h2>导入自己的题库</h2></div><section class="panel"><p class="tip">支持JSON、CSV和Excel .xlsx。先下载表格模板，用Excel编辑后保存为.xlsx即可导入；先预览检查，再选择追加或替换。扫描PDF请先转成表格并逐题核对。</p><div class="actions"><button class="primary" data-action="import-bank">选择题库文件</button><button class="secondary" data-action="template">下载表格模板</button></div></section>
-    <div class="section-title"><h2>学习记录与备份</h2></div><section class="panel"><p class="tip">包含答题记录、间隔复习、收藏、笔记、标疑和未完成进度。备份导入会合并记录，不重复累计同一答题事件。</p><div class="actions"><button class="secondary" data-action="export-backup">导出学习备份</button><button class="secondary" data-action="import-backup">合并学习备份</button><button class="secondary" data-page="sync">账号与同步 →</button></div></section>
+    <div class="section-title"><h2>学习记录与备份</h2></div><section class="panel"><p class="tip">包含答题记录、间隔复习、收藏、笔记、标疑和未完成进度。备份导入会合并记录，不重复累计同一答题事件。</p><div class="actions"><button class="secondary" data-action="export-backup">导出学习备份</button><button class="secondary" data-action="import-backup">合并学习备份</button><button class="secondary" data-page="sync">保存与备份 →</button></div></section>
     <div class="section-title"><h2>我的题目标疑</h2><span>${issues.length}项</span></div><section class="panel">${issues.map(([id, v]) => `<div class="catalog-item"><h3>${esc(id)}</h3><p class="tip">${esc(v.text)}</p><small>${date(v.at)}</small><div class="actions"><button class="secondary" data-practice-id="${esc(id)}">查看题目</button><button class="secondary" data-clear-issue="${esc(id)}">清除标疑</button></div></div>`).join("") || '<p class="tip">答题时可在“我的笔记与题目纠错”留下问题。这些内容仅保存到自己的账号，不会自动发送给他人。</p>'}</section>
     <div class="section-title"><h2>官方依据</h2></div><section class="panel"><a class="source-link" href="${mainlandProfile.source}" target="_blank" rel="noopener">PMI中国：大陆新版考试说明 ↗<small>2026年12月5日起启用新版，180题、240分钟。考务以报名通知及准考信为准。</small></a><a class="source-link" href="${mainlandProfile.outline}" target="_blank" rel="noopener">中国大陆适用的2026年12月ECO ↗<small>本平台任务定位与领域编排依据，核对日期2026-11-11。</small></a><a class="source-link" href="https://scrumguides.org/scrum-guide.html" target="_blank" rel="noopener">The Scrum Guide ↗<small>Scrum角色、产品待办事项与完成定义等背景参考。</small></a><a class="source-link" href="https://www.pmi.org/blog/earned-value-management" target="_blank" rel="noopener">PMI：挣值指标与公式 ↗<small>计算时需要同时确认公式适用的假设。</small></a></section>`
   );
 }
 function syncView() {
+  const cloudNotice = user
+    ? `<section class="panel"><span class="chip">旧账号模式 · 可选</span><h2>${esc(user.email || "旧账号记录")}</h2><p class="tip">仅本模式继续读取原账号云端记录。日常刷题可返回免登录入口。</p><div class="actions"><button class="secondary" data-action="sync-now">检查旧账号云端更新</button><button class="primary" data-action="copy-to-guest">复制当前记录到免登录模式</button><a class="text-button" href="/">返回免登录入口</a></div></section>`
+    : "";
+  const recovery = user
+    ? ""
+    : `<div class="section-title"><h2>找回本浏览器的旧记录</h2></div><section class="panel"><p class="tip">旧版记录仍保留在原位置。选择自己的记录合并到当前本机模式，原记录不会删除。</p><button class="secondary" data-action="find-local-profiles">查找本机旧记录</button>${legacyProfileKeys.map((key, index) => `<div class="history-row"><span>旧版学习记录 ${index + 1}</span><button class="secondary" data-local-profile="${esc(key)}">合并到当前本机记录</button></div>`).join("") || '<p class="tip">暂未找到其他本机记录。也可以导入以前导出的学习备份。</p>'}</section>`;
   return (
     head(
-      "手机和电脑，接着学。",
-      "使用同一账号同步个人学习数据；本机记录保留，离线时可继续练习。",
+      "打开就能刷题，记录留在自己的设备。",
+      "免登录使用全部240题、错题复习和模拟训练。",
     ) +
-    `<section class="panel"><div class="chips"><span class="chip">${esc(syncStatus)}</span></div><h2 style="margin-top:20px">${user ? esc(user.email || "已登录账号") : "当前为本机模式"}</h2><p class="tip">${user ? "答题事件、间隔复习、收藏、笔记和进度按当前账号保存。两台设备更新会先合并，再同步；同一场答题按题目合并选择，已结束状态不会被旧进度恢复。" : "本地HTML文件无需登录。若希望跨设备继续学习，请打开在线版并使用相同邮箱登录。"}</p><div class="actions">${cloud ? '<button class="primary" data-action="sync-now">立即同步并检查另一设备更新</button>' : ""}<button class="secondary" data-action="export-backup">导出备份</button><button class="secondary" data-action="import-backup">合并备份</button></div><div class="note">清理浏览器数据前建议确认已同步或导出备份。两台设备请避免同时继续同一场限时训练；正式训练计时不会因切换设备暂停。</div></section>`
+    cloudNotice +
+    `<section class="panel"><span class="chip">${esc(syncStatus)}</span><h2>本机保存与跨设备转移</h2><p class="tip">电脑、手机和不同浏览器分别保存记录。换设备时，先在原设备导出学习备份，再在新设备导入；合并不会重复累计同一答题事件。</p><div class="actions"><button class="primary" data-action="export-backup">导出学习备份</button><button class="secondary" data-action="import-backup">导入并合并备份</button></div><div class="note">清理浏览器数据或更换设备前请导出备份。当前免登录模式没有自动云端同步。</div></section>` +
+    recovery +
+    `<details class="panel"><summary>恢复原账号云端记录（可选）</summary><p class="tip">仅存于旧账号云端的记录仍受保护。若原登录遇到设备限制，可以先用本机记录或备份继续学习，刷题不需要处理该登录问题。</p>${user ? "" : legacyAccountMode ? '<a class="text-button" href="/signin-with-chatgpt?return_to=%2F%3Flegacy%3D1%23sync" target="_top">使用原账号恢复旧云端记录</a>' : '<a class="text-button" href="/?legacy=1#sync" target="_top">查看旧账号恢复入口</a>'}</details>`
   );
 }
+
 function importView() {
   const p = pendingImport;
   if (!p)
@@ -711,6 +732,29 @@ document.addEventListener("click", (e) => {
       Object.values(state.snapshots).find((q) => q.id === b.dataset.practiceId);
     if (q) return begin("practice", [q], { label: "单题巩固" });
   }
+  if (b.dataset.localProfile) {
+    const key = b.dataset.localProfile;
+    if (!legacyProfileKeys.includes(key)) return;
+    return ask(
+      "合并本机旧记录？",
+      "仅选择属于自己的学习记录。合并后原记录继续保留，当前答题、收藏和笔记也会保留。",
+      async () => {
+        try {
+          const incoming = validateState(
+            await localStore.read(key),
+            validateBank,
+          );
+          settleTime();
+          state = mergeStates(state, incoming);
+          save();
+          go("sync");
+          toast("旧记录已合并到当前本机模式。");
+        } catch (error) {
+          toast("恢复失败：" + error.message);
+        }
+      },
+    );
+  }
   if (b.dataset.clearIssue) {
     state.issues[b.dataset.clearIssue] = { text: "", at: Date.now() };
     save();
@@ -847,6 +891,32 @@ document.addEventListener("click", (e) => {
         go("library");
       },
     );
+  if (action === "find-local-profiles") {
+    findLocalProfiles()
+      .then(() => render())
+      .catch(() => toast("本机旧记录暂时无法读取，可使用备份文件恢复。"));
+    return;
+  }
+  if (action === "copy-to-guest") {
+    return ask(
+      "复制到免登录模式？",
+      "将当前已读取的答题记录、笔记和题库合并到免登录模式。原账号记录继续保留。",
+      async () => {
+        try {
+          settleTime();
+          const saved = await localStore.read(guestKey),
+            guest = saved ? validateState(saved, validateBank) : emptyState();
+          await localStore.save(guestKey, mergeStates(guest, state));
+          const next = new URL(location.href);
+          next.searchParams.delete("legacy");
+          next.hash = "home";
+          location.assign(next.href);
+        } catch (error) {
+          toast("复制未完成：" + error.message);
+        }
+      },
+    );
+  }
   if (action === "sync-now") return cloud?.flush({ refresh: true });
   if (action === "show-nav") {
     document
@@ -1051,7 +1121,8 @@ setInterval(() => {
 
 async function boot() {
   app.innerHTML = '<div class="panel empty">正在读取学习记录…</div>';
-  if (location.protocol !== "file:") {
+  // Normal study never contacts identity services. Old account access is explicit and optional.
+  if (legacyAccountMode) {
     try {
       const response = await fetch("/api/me", {
         cache: "no-store",
@@ -1083,6 +1154,9 @@ async function boot() {
     storageOK = false;
     toast("部分本机记录无法读取，原始记录未被删除；可以从备份恢复。");
   }
+  try {
+    await findLocalProfiles();
+  } catch {}
   refreshBank();
   render();
   if (user) {
@@ -1132,10 +1206,7 @@ async function boot() {
     });
     cloud.start();
   } else {
-    syncStatus =
-      location.protocol === "file:"
-        ? "免登录 · 本机保存"
-        : "本机保存 · 云同步未连接";
+    syncStatus = "免登录 · 本机保存";
     updateStatus();
   }
   const hash = location.hash.slice(1);

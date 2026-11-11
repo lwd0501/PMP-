@@ -34,6 +34,32 @@ export class BrowserStore {
     }
     return JSON.parse(localStorage.getItem(key) || "null");
   }
+  async keys() {
+    const keys = new Set();
+    if (this.db) {
+      const stored = await new Promise((resolve, reject) => {
+        const request = this.db
+          .transaction("states", "readonly")
+          .objectStore("states")
+          .getAllKeys();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      for (const key of stored) if (typeof key === "string") keys.add(key);
+    }
+    try {
+      for (let i = 0; i < localStorage.length; i++)
+        keys.add(localStorage.key(i));
+    } catch {}
+    return [...keys]
+      .filter(
+        (key) =>
+          typeof key === "string" &&
+          key.startsWith("pmp-room-v2:") &&
+          !key.endsWith(":active"),
+      )
+      .sort();
+  }
   save(key, state) {
     if (!this.db) {
       localStorage.setItem(key, JSON.stringify(state));
