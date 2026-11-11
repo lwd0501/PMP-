@@ -215,7 +215,8 @@ test("旧版整包记录自动迁移，空轮询不重复上传，改一条笔�
 test("超过4MB的历史通过小分块完成同步，第二设备读回一致", async () => {
   const env = { DB: new D1() },
     state = emptyState();
-  for (let i = 0; i < 60; i++) answer(state, seedBank, now + i * 86400000);
+  for (let i = 0; i < 60; i++)
+    answer(state, seedBank.slice(0, 180), now + i * 86400000);
   assert.ok(Buffer.byteLength(JSON.stringify(state)) > 4 * 1024 * 1024);
   const a = client(env, "alice", state);
   await a.sync.start();

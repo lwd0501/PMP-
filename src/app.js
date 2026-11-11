@@ -1,3 +1,12 @@
+import {
+  sourceKind,
+  sourceLabel,
+  practiceResources,
+  examVersions,
+  fidelityChecks,
+  REVIEWED_AT,
+} from "./resources.js";
+import { assembleExam, examComposition } from "./exams.js";
 import { BrowserStore } from "./storage.js";
 import { seedBank } from "./questions.js";
 import { correct, shuffle, remaining, validateBank } from "./core.js";
@@ -213,39 +222,11 @@ function sampleFresh(count) {
   return [...fresh, ...old].slice(0, count);
 }
 function sampleExam(count) {
-  const selected = [],
-    used = new Set(),
-    targets =
-      count === 180
-        ? { 人员: 59, 过程: 74, 商业环境: 47 }
-        : { 人员: Math.round(count * 0.33), 过程: Math.round(count * 0.41) };
-  if (!targets["商业环境"])
-    targets["商业环境"] = count - targets["人员"] - targets["过程"];
-  for (const d of ["人员", "过程", "商业环境"])
-    for (const q of shuffle(bank.filter((q) => q.domain === d)).slice(
-      0,
-      targets[d],
-    )) {
-      selected.push(q);
-      used.add(q.id);
-    }
-  if (selected.length < count)
-    selected.push(
-      ...shuffle(bank.filter((q) => !used.has(q.id))).slice(
-        0,
-        count - selected.length,
-      ),
-    );
-  const cases = new Map(),
-    single = [];
-  for (const q of selected) {
-    if (q.case) {
-      if (!cases.has(q.case.id)) cases.set(q.case.id, []);
-      cases.get(q.case.id).push(q);
-    } else single.push(q);
-  }
-  return [...shuffle([...cases.values()]).flat(), ...shuffle(single)];
+  const result = assembleExam(bank, count);
+  if (result.warnings.length) toast(result.warnings.join(" "));
+  return result.questions;
 }
+
 function empty(title, text, action = "practice") {
   return (
     head(title, text) +
@@ -274,9 +255,9 @@ function homeView() {
           `<div class="resume"><span>${esc(s.label)} · 已选择 ${Object.values(s.answers).filter((a) => a.length).length}/${s.questionKeys.length}题${s.deadline ? " · 剩余 " + clock(remaining(s)) : ""}</span><button class="primary" data-resume="${s.id}">继续答题 →</button></div>`,
       )
       .join("") +
-    `<section class="hero"><div><div class="eyebrow">LEARN. RETRIEVE. UNDERSTAND.</div><h2>看懂每个决定，<br>把知识真正用起来。</h2><p>先练未做题，再复习到期的薄弱点。首次成绩与重复练习分开统计，帮助你看到真实的学习进展。</p><div class="actions"><button class="primary" data-action="quick">开始10题热身 ↗</button><button class="outline-light" data-action="review-due">今日复习 ${due.length}题</button></div></div><div class="hero-art" aria-hidden="true"><div class="orbit"><span>✓</span><i>✦</i></div></div></section>
+    `<section class="hero"><div><div class="eyebrow">LEARN. RETRIEVE. UNDERSTAND.</div><h2>看懂每个决定，<br>把知识真正用起来。</h2><p>先练未做题，再复习到期的薄弱点。首次成绩与重复练习分开统计，帮助你看到真实的学习进展。</p><div class="actions"><button class="primary" data-action="quick">开始10题热身 ↗</button><button class="outline-light" data-action="review-due">今日复习 ${due.length}题</button><button class="outline-light" data-action="community-drill">新增开源译编60题</button></div></div><div class="hero-art" aria-hidden="true"><div class="orbit"><span>✓</span><i>✦</i></div></div></section>
     <section class="stats">${metric("题库题目", bank.length, "含" + bank.filter((q) => q.case).length + "道案例题")}${metric("已练题目", d.practiced, "本次版本与历史记录均保留")}${metric("首次作答正确率", percent(d.firstRight, d.firstTotal), d.firstTotal ? d.firstTotal + "道有完整首次记录" : "从新版开始记录；旧记录不推测")}${metric("今日到期复习", due.length, pending.length + "道待巩固 · 答对一次不立即移出")}</section>
-    <div class="section-title"><h2>选择练习强度</h2><span>所有题目均为原创模拟练习</span></div><section class="mode-grid">
+    <div class="section-title"><h2>选择练习强度</h2><span>原创练习与开源题中文译编</span></div><section class="mode-grid">
     <button class="mode-card" data-action="full"><span class="mode-icon">◷</span><h3>180题全程训练</h3><p>240分钟，案例成组展示，交卷后统一复盘。</p><div class="card-bottom"><span>当前题库${bank.length >= 180 ? "可以组卷" : "不足180题"}</span><b>↗</b></div></button>
     <button class="mode-card" data-action="half"><span class="mode-icon">▤</span><h3>90题半程训练</h3><p>120分钟，适应长时间阅读与判断的节奏。</p><div class="card-bottom"><span>范围内无重复抽题</span><b>↗</b></div></button>
     <button class="mode-card" data-page="diagnostics"><span class="mode-icon">↗</span><h3>按薄弱考点练习</h3><p>查看具体任务、首次正确率、用时与错因。</p><div class="card-bottom"><span>覆盖26个大纲任务</span><b>↗</b></div></button></section>
@@ -316,6 +297,7 @@ function filterQuestions(source, values) {
       (!values.approach || q.approach === values.approach) &&
       (!values.task || q.taskId === values.task) &&
       (!values.difficulty || q.difficulty === values.difficulty) &&
+      (!values.source || sourceKind(q) === values.source) &&
       (!values.type ||
         (values.type === "case"
           ? !!q.case
@@ -338,7 +320,7 @@ function filterQuestions(source, values) {
   );
 }
 function filtersHTML() {
-  return `<label class="field">领域<select id="domain"><option value="">全部领域</option>${["人员", "过程", "商业环境"].map((x) => `<option>${x}</option>`).join("")}</select></label><label class="field">交付方法<select id="approach"><option value="">全部方法</option><option>预测</option><option>敏捷</option><option>混合</option></select></label><label class="field">大纲任务<select id="task"><option value="">全部任务</option>${taskOptions()}</select></label><label class="field">预估难度<select id="difficulty"><option value="">全部难度</option><option>基础</option><option>进阶</option><option>未标定</option></select></label><label class="field">题型<select id="type"><option value="">全部题型</option><option value="single">单选</option><option value="multiple">多选</option><option value="case">案例题</option></select></label><label class="field">学习状态<select id="status"><option value="">全部状态</option><option value="new">尚未作答</option><option value="pending">待间隔巩固</option><option value="reported">自己标疑的题</option></select></label><label class="field search-field">题号或关键词<input id="search" type="search" placeholder="例如：风险、PMP-060、知识转移"></label>`;
+  return `<label class="field">领域<select id="domain"><option value="">全部领域</option>${["人员", "过程", "商业环境"].map((x) => `<option>${x}</option>`).join("")}</select></label><label class="field">交付方法<select id="approach"><option value="">全部方法</option><option>预测</option><option>敏捷</option><option>混合</option></select></label><label class="field">大纲任务<select id="task"><option value="">全部任务</option>${taskOptions()}</select></label><label class="field">预估难度<select id="difficulty"><option value="">全部难度</option><option>基础</option><option>进阶</option><option>中等</option><option>较难</option><option>未标定</option></select></label><label class="field">题目来源<select id="source"><option value="">全部来源</option><option value="original-practice">本平台原创</option><option value="open-source-adapted">开源题中文译编</option><option value="user-import">个人导入</option><option value="unverified">旧记录或未提供来源</option></select></label><label class="field">题型<select id="type"><option value="">全部题型</option><option value="single">单选</option><option value="multiple">多选</option><option value="case">案例题</option></select></label><label class="field">学习状态<select id="status"><option value="">全部状态</option><option value="new">尚未作答</option><option value="pending">待间隔巩固</option><option value="reported">自己标疑的题</option></select></label><label class="field search-field">题号或关键词<input id="search" type="search" placeholder="例如：风险、PMP-060、知识转移"></label>`;
 }
 function filterValues() {
   return Object.fromEntries(
@@ -347,6 +329,7 @@ function filterValues() {
       "approach",
       "task",
       "difficulty",
+      "source",
       "type",
       "status",
       "search",
@@ -377,9 +360,12 @@ function setupView(mode) {
   );
 }
 function qualityHTML(q) {
-  const t = taskById(q.taskId);
-  return `<details class="quality-details"><summary>依据与复核信息 · ${esc(q.taskId || "未定位")} · v${esc(q.revision || 1)}</summary><p>${t ? `${esc(t.domain)} · 任务${t.number} ${esc(t.title)}` : "导入题目，尚未定位到大纲任务"} · 预估难度：${esc(q.difficulty || "未标定")}</p><p>${esc(q.review?.note || "来源与答案待核验。")}</p>${(q.references || []).map((r) => `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || "参考依据")}${r.page ? " · 第" + r.page + "页" : ""} ↗</a><small>${esc(r.role || "导入者提供，待核验")}</small>`).join("") || "<p>尚未提供可核对的依据。</p>"}</details>`;
+  const t = taskById(q.taskId),
+    p = q.provenance,
+    e = q.difficultyEvidence;
+  return `<details class="quality-details"><summary>来源、依据与难度 · ${esc(q.taskId || "未定位")} · v${esc(q.revision || 1)}</summary><p>${esc(sourceLabel(q))} · ${t ? `${esc(t.domain)} · ${esc(t.title)}` : "任务待核对"}</p><p>预估难度：${esc(q.difficulty || "未标定")} · ${e?.basis === "author-estimate" ? "原作者标签，未经统计校准" : "编排预估，未经统计校准"}</p><p>${esc(e?.reason || "暂无可核查的难度依据。")}</p><p>${esc(q.review?.note || "来源与答案待核验。")}</p><p class="tip">没有核实本题在某年正式考试中出现；不能由题目标签推断命中率。</p>${p?.sourceId ? `<p>原题编号：${esc(p.sourceId)}${p.sourceCommit ? " · 源码版本 " + esc(p.sourceCommit.slice(0, 12)) : ""}</p>` : ""}${p?.clarification ? `<div class="note">译编说明：${esc(p.clarification)}</div>` : ""}${(q.references || []).map((r) => `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || "参考依据")}${r.page ? " · 第" + r.page + "页" : ""} ↗</a><small>${esc(r.role || "导入者提供，待核验")}</small>`).join("")}${p?.original ? `<details><summary>核对英文原题与作者解析</summary><p>${esc(p.original.stem)}</p>${p.original.options.map((text, i) => `<p>${String.fromCharCode(65 + i)}. ${esc(text)}</p>`).join("")}<p>原作者难度：${esc(p.original.difficulty)}（预估）</p><p>原答案（按原文次序）：${(Array.isArray(p.original.answer) ? p.original.answer : [p.original.answer]).map((i) => String.fromCharCode(65 + i)).join("、")}</p><p>${esc(p.original.explanation)}</p><p class="tip">${esc(p.translation)}</p></details><details><summary>授权与署名 · ${esc(p.license)}</summary><pre style="white-space:pre-wrap">${esc(p.licenseNotice)}</pre></details>` : ""}</details>`;
 }
+
 function rationaleHTML(
   q,
   answers,
@@ -434,7 +420,7 @@ function resultView() {
       )
       .join(
         "",
-      )}</div><div class="actions" style="justify-content:center"><button class="primary" data-action="retry-result">重练本次错题 / 猜测题</button><button class="secondary" data-page="diagnostics">查看考点诊断</button></div></section><div class="section-title"><h2>逐题复盘</h2><label class="field">显示<select id="review-filter"><option value="all">全部</option><option value="wrong">答错</option><option value="unanswered">未答</option><option value="guess">不确定 / 猜测</option></select></label></div><div id="review-list">${reviewList(qs, s, "all")}</div>`
+      )}</div>${s.mode === "exam" ? `<p class="tip">本卷实际构成：预测${examComposition(qs).approaches["预测"]}题，敏捷${examComposition(qs).approaches["敏捷"]}题，混合${examComposition(qs).approaches["混合"]}题。难度未经实考参数校准。</p>` : ""}<div class="actions" style="justify-content:center"><button class="primary" data-action="retry-result">重练本次错题 / 猜测题</button><button class="secondary" data-page="diagnostics">查看考点诊断</button></div></section><div class="section-title"><h2>逐题复盘</h2><label class="field">显示<select id="review-filter"><option value="all">全部</option><option value="wrong">答错</option><option value="unanswered">未答</option><option value="guess">不确定 / 猜测</option></select></label></div><div id="review-list">${reviewList(qs, s, "all")}</div>`
   );
 }
 function reviewList(qs, s, filter) {
@@ -537,12 +523,15 @@ function libraryView() {
     ).length,
     mapped = bank.filter((q) => q.taskId).length,
     issues = Object.entries(state.issues).filter(([, v]) => v.text);
+  const sourcesPanel = `<div class="section-title"><h2>2022至今的公开模拟资料</h2><span>核对日期 ${REVIEWED_AT}</span></div><section class="panel"><p class="tip">下列为原站练习入口，外部题量不计入内置${seedBank.length}题。英文原站可使用浏览器翻译；各站账号与记录不与本平台互通。</p>${practiceResources.map((r) => `<div class="catalog-item"><div class="chips"><span class="chip">${esc(r.kind)}</span><span class="chip">${esc(r.language)}</span></div><a class="source-link" href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title)} ↗</a><p>${esc(r.count)} · ${esc(r.period)}</p><p class="tip">${esc(r.note)}</p></div>`).join("")}</section>`;
+  const fidelityPanel = `<div class="section-title"><h2>与正式考试接近到什么程度？</h2></div><section class="panel table-wrap"><p class="tip">目前没有可复核的实考试题参数及群体首答数据，暂不能给出“相似度90%”或通过率。</p><table class="diagnostic-table"><thead><tr><th>维度</th><th>当前结论</th><th>依据与差距</th></tr></thead><tbody>${fidelityChecks.map((row) => `<tr>${row.map((cell) => `<td>${esc(cell)}</td>`).join("")}</tr>`).join("")}</tbody></table></section><div class="section-title"><h2>考试版本对照</h2></div><section class="panel">${examVersions.map((v) => `<div class="catalog-item"><a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.label)} ↗</a><p>${esc(v.period)} · ${esc(v.weights)}</p><p class="tip">${esc(v.note)}</p></div>`).join("")}</section>`;
   return (
     head(
       "题库有版本，复核有边界。",
       "优先核对依据、假设和选项逻辑，遇到歧义可以标疑留存。",
     ) +
-    `<section class="panel"><h2>当前题库 · ${bank.length}题</h2><div class="result-grid"><div class="result-mini">有任务定位<strong>${mapped}/${bank.length}</strong></div><div class="result-mini">已做AI逻辑复查<strong>${reviewed}/${bank.length}</strong></div><div class="result-mini">独立专家签审<strong>尚未完成</strong></div></div><p class="tip">内置题库包含30个原创案例、图表和数据分析题。本轮为原90题补全了大纲定位与版本信息，并改写了部分易排除的干扰选项。新增题也需要独立专家复核。</p><div class="note">大纲链接用于知识点定位，不是PMI对本题答案的背书。基础 / 进阶为预估难度；训练正确率不等于正式考试通过率。</div><div class="actions"><button class="primary" data-page="catalog">检索题库</button><button class="secondary" data-action="export-bank">导出JSON题库</button>${state.custom?.value ? '<button class="secondary" data-action="reset-bank">恢复内置180题</button>' : ""}</div></section>
+    `<section class="panel"><h2>当前题库 · ${bank.length}题</h2><div class="result-grid"><div class="result-mini">有任务定位<strong>${mapped}/${bank.length}</strong></div><div class="result-mini">已做AI逻辑复查<strong>${reviewed}/${bank.length}</strong></div><div class="result-mini">独立专家签审<strong>尚未完成</strong></div></div><p class="tip">内置240题：原有180道原创练习（含30个案例），新增60道MIT开源题中文译编。每道译题可核对原文、答案、作者难度及译编说明。没有将它们标为历年正式真题。</p><div class="note">大纲链接用于知识点定位，不是PMI对本题答案的背书。基础 / 进阶为预估难度；训练正确率不等于正式考试通过率。</div><div class="actions"><button class="primary" data-page="catalog">检索题库</button><button class="secondary" data-action="export-bank">导出JSON题库</button>${state.custom?.value ? '<button class="secondary" data-action="reset-bank">恢复内置240题</button>' : ""}</div></section>
+    ${fidelityPanel}${sourcesPanel}
     <div class="section-title"><h2>导入自己的题库</h2></div><section class="panel"><p class="tip">支持JSON、CSV和Excel .xlsx。先下载表格模板，用Excel编辑后保存为.xlsx即可导入；先预览检查，再选择追加或替换。扫描PDF请先转成表格并逐题核对。</p><div class="actions"><button class="primary" data-action="import-bank">选择题库文件</button><button class="secondary" data-action="template">下载表格模板</button></div></section>
     <div class="section-title"><h2>学习记录与备份</h2></div><section class="panel"><p class="tip">包含答题记录、间隔复习、收藏、笔记、标疑和未完成进度。备份导入会合并记录，不重复累计同一答题事件。</p><div class="actions"><button class="secondary" data-action="export-backup">导出学习备份</button><button class="secondary" data-action="import-backup">合并学习备份</button><button class="secondary" data-page="sync">账号与同步 →</button></div></section>
     <div class="section-title"><h2>我的题目标疑</h2><span>${issues.length}项</span></div><section class="panel">${issues.map(([id, v]) => `<div class="catalog-item"><h3>${esc(id)}</h3><p class="tip">${esc(v.text)}</p><small>${date(v.at)}</small><div class="actions"><button class="secondary" data-practice-id="${esc(id)}">查看题目</button><button class="secondary" data-clear-issue="${esc(id)}">清除标疑</button></div></div>`).join("") || '<p class="tip">答题时可在“我的笔记与题目纠错”留下问题。这些内容仅保存到自己的账号，不会自动发送给他人。</p>'}</section>
@@ -737,6 +726,24 @@ document.addEventListener("click", (e) => {
   }
   const action = b.dataset.action;
   if (!action) return;
+  if (action === "community-drill") {
+    const pack = seedBank.filter(
+      (q) => sourceKind(q) === "open-source-adapted",
+    );
+    if (state.custom?.value) {
+      const ids = new Set(bank.map((q) => q.id)),
+        missing = pack.filter((q) => !ids.has(q.id));
+      if (bank.length + missing.length > 5000)
+        return toast("当前题库已接近5000题，请先分库保存后再追加。");
+      state.custom = { value: [...bank, ...missing], at: Date.now() };
+      refreshBank();
+    }
+    return begin(
+      "practice",
+      pack.map((q) => bank.find((current) => current.id === q.id) || q),
+      { label: "60题 · 开源情境译编" },
+    );
+  }
   if (action === "quick")
     return begin("practice", sampleFresh(10), { label: "10题热身" });
   if (action === "full" || action === "half") {
@@ -832,7 +839,7 @@ document.addEventListener("click", (e) => {
   }
   if (action === "reset-bank")
     return ask(
-      "恢复内置180题？",
+      "恢复内置240题？",
       "当前题库将切换为内置题库，历史记录、收藏和笔记保留。",
       () => {
         state.custom = { value: null, at: Date.now() };

@@ -3,12 +3,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test --test-isolation=none test.mjs learning.test.mjs server.test.mjs sync.test.mjs",
+    "test": "node --test --test-isolation=none test.mjs learning.test.mjs server.test.mjs sync.test.mjs content.test.mjs",
     "check": "node scripts/check.mjs",
     "build": "node build-site.mjs",
     "db:generate": "drizzle-kit generate",
-    "format": "prettier --write src server scripts db *.mjs *.ts package.json README.md .github",
-    "format:check": "prettier --check src server scripts db *.mjs *.ts package.json README.md .github",
+    "format": "prettier --write src server scripts db *.mjs *.ts package.json README.md THIRD_PARTY_NOTICES.md .github",
+    "format:check": "prettier --check src server scripts db *.mjs *.ts package.json README.md THIRD_PARTY_NOTICES.md .github",
     "test:browser": "node scripts/browser-smoke.mjs",
     "build:offline": "node build-offline.mjs"
   },

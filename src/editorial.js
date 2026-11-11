@@ -178,6 +178,7 @@ export function enrichQuestion(original, index) {
   const taskId = q.taskId || mapping[index],
     task = taskById(taskId);
   const references = [
+    ...(q.references || []),
     {
       title:
         "大陆2026年12月ECO · " +
@@ -213,11 +214,24 @@ export function enrichQuestion(original, index) {
       (/挣值|路径|估算|计算|混合|治理/.test(q.topic) ? "进阶" : "基础"),
     revision: patch ? 2 : original.revision || 1,
     references,
+    provenance: q.provenance || {
+      kind: "original-practice",
+      author: "本平台 AI辅助编写",
+      sourceId: q.id,
+      examOccurrenceVerified: false,
+    },
+    difficultyEvidence: q.difficultyEvidence || {
+      basis: "editor-estimate",
+      calibrated: false,
+      reason: "基础/进阶为编排预估，未依据群体首次作答统计校准。",
+    },
     review: {
       status: "logic-reviewed",
       independent: false,
       at: "2026-11-11",
-      note: "已做结构、分类和答案逻辑复查；预估难度未经统计校准，仍待独立PMP专家复核。",
+      note:
+        q.review?.note ||
+        "已做结构、分类和答案逻辑复查；预估难度未经统计校准，仍待独立PMP专家复核。",
     },
     status: "AI辅助逻辑复查 · 待独立专家复核",
   };

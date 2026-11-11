@@ -173,7 +173,7 @@ test("历史答卷保留题目快照，不追溯使用新版选项", () => {
   assert.notEqual(snapshot.stem, changed.stem);
   assert.equal(snapshot.stem, q.stem);
 });
-test("180题均有有效任务、依据、预估难度和诚实复核状态", () => {
+test("240题均有有效任务、依据、预估难度和诚实复核状态", () => {
   assert.equal(new Set(seedBank.map((q) => q.taskId)).size, 26);
   assert.equal(
     new Set(seedBank.filter((q) => q.case).map((q) => q.case.id)).size,

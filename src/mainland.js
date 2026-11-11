@@ -14,7 +14,7 @@ export const mainlandProfile = {
 export function makePapers(questions) {
   return Array.from({ length: Math.ceil(questions.length / 30) }, (_, i) => ({
     id: i + 1,
-    title: `第${i + 1}组 · ${i < 3 ? "基础情境" : "案例应用"}`,
+    title: `第${i + 1}组 · ${i < 3 ? "基础情境" : i < 6 ? "案例应用" : "开源译编"}`,
     questions: questions.slice(i * 30, i * 30 + 30),
   }));
 }

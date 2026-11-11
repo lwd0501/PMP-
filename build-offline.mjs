@@ -30,7 +30,10 @@ html = html
 if (/<script\b[^>]*\bsrc=|<link\b[^>]*\brel="stylesheet"/.test(html))
   throw Error("离线文件仍包含外部脚本或样式，请检查模板。");
 const htmlFile = path.join(directory, "PMP-上海广东-学习平台.html");
-const bankFile = path.join(directory, "PMP-上海广东-180题题库.json");
+const bankFile = path.join(
+  directory,
+  `PMP-上海广东-${seedBank.length}题题库.json`,
+);
 await fs.writeFile(htmlFile, html);
 await fs.writeFile(bankFile, JSON.stringify(seedBank, null, 2));
 console.log(

@@ -80,6 +80,70 @@ export function validateBank(v) {
         ))
     )
       throw Error("依据链接须为https网址。");
+    if (q.provenance) {
+      const p = q.provenance;
+      if (
+        typeof p !== "object" ||
+        Array.isArray(p) ||
+        !["original-practice", "open-source-adapted", "user-import"].includes(
+          p.kind,
+        )
+      )
+        throw Error("题目来源类型不正确。");
+      for (const field of [
+        "author",
+        "title",
+        "sourceId",
+        "sourceCommit",
+        "sourceUrl",
+        "license",
+        "licenseNotice",
+        "translation",
+        "clarification",
+      ])
+        if (
+          p[field] !== undefined &&
+          (typeof p[field] !== "string" || p[field].length > 10000)
+        )
+          throw Error("题目来源说明格式不正确。");
+      if (p.sourceUrl && !/^https:\/\//.test(p.sourceUrl))
+        throw Error("原题链接须为https网址。");
+      if (p.original) {
+        const o = p.original;
+        if (
+          !o ||
+          typeof o !== "object" ||
+          typeof o.stem !== "string" ||
+          o.stem.length > 30000 ||
+          !Array.isArray(o.options) ||
+          o.options.length < 2 ||
+          o.options.length > 8 ||
+          o.options.some((x) => typeof x !== "string" || x.length > 6000) ||
+          typeof o.explanation !== "string" ||
+          o.explanation.length > 30000
+        )
+          throw Error("英文原题对照格式不正确。");
+        const answers = Array.isArray(o.answer) ? o.answer : [o.answer];
+        if (
+          !answers.length ||
+          answers.some(
+            (i) => !Number.isInteger(i) || i < 0 || i >= o.options.length,
+          )
+        )
+          throw Error("原题答案下标不正确。");
+      }
+    }
+    if (
+      q.difficultyEvidence &&
+      (typeof q.difficultyEvidence !== "object" ||
+        !["author-estimate", "editor-estimate", "observed"].includes(
+          q.difficultyEvidence.basis,
+        ) ||
+        typeof q.difficultyEvidence.calibrated !== "boolean" ||
+        typeof q.difficultyEvidence.reason !== "string" ||
+        q.difficultyEvidence.reason.length > 10000)
+    )
+      throw Error("难度依据格式不正确。");
     if (q.case) {
       const c = q.case;
       if (

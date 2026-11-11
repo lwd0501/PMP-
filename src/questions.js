@@ -1,3 +1,4 @@
+import { communityQuestions } from "./community-questions.js";
 import { extraQuestions } from "./extra-questions.js";
 import { caseQuestions } from "./case-questions.js";
 import { enrichQuestion } from "./editorial.js";
@@ -593,5 +594,6 @@ const rawBank = [
   })),
   ...extraQuestions,
   ...caseQuestions,
+  ...communityQuestions,
 ];
 export const seedBank = rawBank.map(enrichQuestion);

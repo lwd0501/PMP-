@@ -219,6 +219,70 @@ try {
   const other = await page("qa-other", 390);
   assert.equal(Object.keys((await other.state()).events).length, 0);
   console.log("PASS desktop/mobile answer, sync and account isolation");
+  await mobile.click('[data-page="library"]');
+  assert.equal(
+    await mobile.evaluate(
+      "document.body.innerText.includes('2022至今的公开模拟资料')",
+    ),
+    true,
+  );
+  assert.equal(
+    await mobile.evaluate(
+      "document.body.innerText.includes('与正式考试接近到什么程度')",
+    ),
+    true,
+  );
+  assert.equal(
+    await mobile.evaluate("document.documentElement.scrollWidth<=innerWidth"),
+    true,
+  );
+  await mobile.click('[data-page="catalog"]');
+  await mobile.evaluate(
+    "document.querySelector('#source').value='open-source-adapted';document.querySelector('#source').dispatchEvent(new Event('change',{bubbles:true}))",
+  );
+  assert.equal(
+    await mobile.evaluate(
+      "document.querySelector('#catalog-count').innerText.includes('匹配60题')",
+    ),
+    true,
+  );
+  await mobile.click('[data-page="home"]');
+  await mobile.click('[data-action="community-drill"]');
+  await mobile.wait("document.querySelector('[name=answer]')!==null");
+  const communityState = await mobile.state(),
+    communityId = await mobile.evaluate(
+      "localStorage.getItem('pmp-room-v2:qa-one:active')",
+    ),
+    communitySession = communityState.sessions[communityId],
+    communityQuestion =
+      communityState.snapshots[communitySession.questionKeys[0]];
+  assert.equal(communitySession.questionKeys.length, 60);
+  assert.equal(communityQuestion.provenance.kind, "open-source-adapted");
+  for (const index of communityQuestion.answer)
+    await mobile.click(`[name=answer][value="${index}"]`);
+  await mobile.click('[data-action="check"]');
+  await mobile.wait("document.querySelector('.quality-details')!==null");
+  await mobile.evaluate("document.querySelector('.quality-details').open=true");
+  assert.equal(
+    await mobile.evaluate(
+      "document.querySelector('.quality-details').innerText.includes('开源题中文译编')",
+    ),
+    true,
+  );
+  assert.equal(
+    await mobile.evaluate(
+      "document.querySelector('.quality-details').textContent.includes('Two months into a product build')",
+    ),
+    true,
+  );
+  assert.equal(
+    await mobile.evaluate("document.documentElement.scrollWidth<=innerWidth"),
+    true,
+  );
+  console.log(
+    "PASS historical resource links, fidelity disclosure, source filter and Chinese question attribution",
+  );
+
   await desktop.click('[data-page="home"]');
   await desktop.click('[data-action="full"]');
   await desktop.wait("document.querySelector('#timer')!==null");
