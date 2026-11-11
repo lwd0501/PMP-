@@ -1,4 +1,6 @@
 import {extraQuestions} from './extra-questions.js';
+import {caseQuestions} from './case-questions.js';
+import {enrichQuestion} from './editorial.js';
 // 原创练习题初稿；未经过 PMI 或独立 PMP 专家审定，不是官方试题。
 const rows = [
 ['人员','混合','冲突管理','两名工程师在设计会上因技术路线发生争执，影响其他成员参与。没有安全或纪律问题。项目经理首先应怎么做？',['立即请发起人裁定技术路线','分别倾听双方关注点，促成基于共同目标和事实的讨论','以项目经理偏好的方案结束争论','忽略争执，等待团队自行平息'],[1],['尚未尝试团队层面的协作，立即升级过早。','先理解分歧，再引导协作，有助于解决问题并保留团队参与。','以职位压制分歧没有解决根因。','冲突已经影响团队，需要及时介入。']],
@@ -33,4 +35,5 @@ const rows = [
 ['商业环境','混合','治理与决策','一个潜在调整可能提升收益，但超出项目经理的批准权限，且影响多个部门。项目经理应怎么做？',['准备收益、成本、风险和影响分析，提交适当治理机构决策','自行实施，成功后再报告','把审批权限写成自己的名字','只听取本团队意见就作最终决定'],[0],['充分的信息和正确的授权路径有助于跨部门决策。','不能用潜在收益替代授权。','项目经理不能单方面改变组织授权。','跨部门影响应纳入相关方和治理视角。']]
 ];
 const revisedDomains={2:'商业环境',5:'商业环境',11:'商业环境',12:'商业环境',22:'商业环境',23:'过程',28:'过程',29:'过程'};
-export const seedBank = [...rows.map((r,i)=>({id:`PMP-${String(i+1).padStart(3,'0')}`,domain:revisedDomains[i+1]||r[0],approach:r[1],topic:r[2],stem:r[3],options:r[4],answer:r[5],rationales:r[6],status:'原创初稿，待独立复核；领域分类已按大陆2026年12月ECO调整'})),...extraQuestions];
+const rawBank = [...rows.map((r,i)=>({id:`PMP-${String(i+1).padStart(3,'0')}`,domain:revisedDomains[i+1]||r[0],approach:r[1],topic:r[2],stem:r[3],options:r[4],answer:r[5],rationales:r[6],status:'原创初稿，待独立复核；领域分类已按大陆2026年12月ECO调整'})),...extraQuestions,...caseQuestions];
+export const seedBank=rawBank.map(enrichQuestion);

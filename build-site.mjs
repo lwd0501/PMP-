@@ -1,0 +1,14 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+const files=(await fs.readdir('dist')).filter(x=>/\.(js|css|html|svg)$/.test(x));
+const assets={};for(const file of files)assets['/'+file]=await fs.readFile(path.join('dist',file),'utf8');
+assets['/']=assets['/index.html'];
+let api=await fs.readFile('server/api.mjs','utf8');
+let core=await fs.readFile('dist/core.js','utf8');
+let learning=await fs.readFile('dist/learning.js','utf8');
+const bare=x=>x.replace(/^import .*?;\r?\n/gm,'').replace(/^export /gm,'');
+const code=`${bare(core)}\n${bare(learning)}\n${bare(api)}\nconst assets=${JSON.stringify(assets)};\nexport default {async fetch(request,env){const u=new URL(request.url);if(u.pathname.startsWith('/api/'))return handleApi(request,env);if(!['GET','HEAD'].includes(request.method))return new Response('Method not allowed',{status:405});const content=assets[u.pathname];if(content===undefined)return new Response('Not found',{status:404});const type=u.pathname.endsWith('.js')?'text/javascript':u.pathname.endsWith('.css')?'text/css':u.pathname.endsWith('.svg')?'image/svg+xml':'text/html';return new Response(request.method==='HEAD'?null:content,{headers:{'content-type':type+'; charset=utf-8','cache-control':'no-cache','x-content-type-options':'nosniff','referrer-policy':'same-origin'}});}};\n`;
+await fs.mkdir('dist/server',{recursive:true});await fs.writeFile('dist/server/index.js',code);
+await fs.mkdir('dist/.openai',{recursive:true});await fs.copyFile('.openai/hosting.json','dist/.openai/hosting.json');
+await fs.cp('drizzle','dist/.openai/drizzle',{recursive:true});
+console.log('Built authenticated Worker, static assets and database migrations.');
