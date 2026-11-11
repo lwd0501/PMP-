@@ -5,3 +5,6 @@ dist/.openai/
 .env.*
 *.sqlite
 *.sqlite-*
+.wrangler/
+.dev.vars
+.dev.vars.*
