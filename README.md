@@ -1,6 +1,6 @@
 # PMP- · PMP 学习平台
 
-面向中国大陆 PMP 备考的中文学习平台，适用于上海、广东等地区。包含前端、账号同步后端、原创题库、数据库迁移和自动测试。
+面向中国大陆 PMP 备考的中文学习平台，供个人学习和小范围分享使用。包含前端、账号同步后端、原创题库、数据库迁移和自动测试。
 
 [当前在线版](https://pmp-practice-liu-20261110.sysact781394.chatgpt.site) 的访问权限由站点所有者管理；把代码上传到 GitHub 不会改变现有站点的权限或自动触发网站发布。
 
@@ -39,10 +39,15 @@ artifacts/PMP-上海广东-180题题库.json
 ```bash
 npm ci
 npm test
+npm run build
+npm run build:offline
+npm run test:browser
 node scripts/preview.mjs
 ```
 
 打开 `http://127.0.0.1:47831/`。
+
+浏览器回归使用本机 Chrome；可通过 `PMP_CHROME_BIN` 指定可执行文件。测试会创建临时浏览器资料和内存数据库，并在结束后关闭。
 
 本机预览使用合成测试身份和内存 SQLite 数据库，重启后测试数据库会清空。这个预览身份逻辑只用于本机 QA，不会打进生产 Worker，也不能当作生产登录系统使用。
 
@@ -68,7 +73,13 @@ npm run build
 
 - `.openai/hosting.json` 保留当前站点的项目标识与数据库绑定。项目标识不是访问令牌。
 - 平台向服务端提供可信的 `oai-authenticated-user-id` 和邮箱头；后端按用户 ID 隔离记录。
-- `/api/state` 使用版本号进行乐观并发检查。客户端按答题事件标识去重并合并冲突。
+- 新客户端使用 `/api/state/manifest` 和 `/api/state/chunks/:id`：分块校验、按变化上传，最后通过版本号原子提交目录。上传中断不会替换当前目录；无变化的轮询只读不写。
+- `/api/state` 保留旧版整包读写兼容。旧记录在首次新客户端同步时迁移为分块格式，不删除原有学习内容。
+- 本机使用 IndexedDB；旧 `localStorage` 学习记录在成功写入后迁移。浏览器不支持 IndexedDB 时回退本机存储，仍可导出备份。
+- 已交卷会话以首次完成的快照为准，固定答案、信心、用时和成绩；两个离线完成版本按完成时间及确定性规则收敛。服务端拒绝旧客户端修改已完成答卷。
+- 题目快照包含解析、案例及复核元数据；仅修改解析也不会覆盖旧快照。已有旧快照标识继续可读。
+- 当前分块记录总量上限32MB，另有50000条作答事件、1000场会话和10000份题目快照的结构上限；这不是无限存储。旧整包接口仍限4MB。
+- 过期且未被当前目录引用的分块保留24小时后在后续提交中清理；账号数据相互隔离。
 - `/api/health` 用于检查数据库绑定及迁移是否就绪，不读取个人学习内容。
 - 在其他托管环境部署时，必须配置可信身份来源和 D1 绑定；不能直接信任公网客户端自行提交的身份头。
 - GitHub Pages 只能提供静态页面，本身无法承载账号同步后端和数据库。
@@ -86,8 +97,10 @@ npm run db:generate
 ## 目录
 
 ```text
-dist/                 前端源文件与题库模块
+src/                  前端源文件、题库、学习逻辑与分块同步
+dist/                 构建输出（不提交）
 server/api.mjs        个人学习记录同步 API
+server/worker.mjs     Worker 入口（esbuild 打包）
 db/schema.ts          数据库表结构
 drizzle/              SQL 迁移及元数据
 scripts/preview.mjs   仅供本机使用的预览与合成身份
@@ -97,7 +110,18 @@ artifacts/            可直接使用的离线版本与题库
 test.mjs              题库、抽题与计分检查
 learning.test.mjs     间隔复习、诊断、迁移和合并检查
 server.test.mjs       SQLite、账号隔离和并发版本检查
+sync.test.mjs         快照、交卷冻结、大记录和分块同步回归
+scripts/browser-smoke.mjs  电脑/手机/离线/迁移浏览器回归
+.github/workflows/    GitHub 自动检查
 ```
+
+## 日常维护
+
+修改 `src/` 源码，运行 `npm run format`；发布前执行 `npm run check`、`npm run format:check`、`npm test`、两种构建与浏览器回归。GitHub Actions 按相同流程检查提交和 Pull Request，不自动发布站点。
+
+新增数据库迁移仅创建分块表，原 `learning_state` 表和已有迁移保持不变。回退服务端时应保留支持分块读取的 API；早期版本 Worker 无法理解已经迁移的云端目录，不能直接用旧 Worker 覆盖恢复。学习备份仍使用可移植的 v2 JSON 格式。
+
+本轮完成稳定性、存储与维护基础；题库编辑管理、集中纠错、每日学习计划和 PWA 安装不包含在本轮更新中。
 
 ## 备考依据
 
